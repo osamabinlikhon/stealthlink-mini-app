@@ -1,0 +1,239 @@
+version: '3.8'
+
+services:
+  # Main StealthChat application
+  stealth-chat:
+    build: 
+      context: .
+      target: production
+    container_name: stealth-chat-app
+    ports:
+      - "3000:3000"  # HTTP API
+      - "3001:3001"  # WebSocket
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - WS_PORT=3001
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - stealth-network
+    volumes:
+      # Optional: Mount for logs persistence
+      - stealth-logs:/app/logs
+    depends_on:
+      - redis
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.stealth-chat.rule=Host(`your-domain.com`)"
+      - "traefik.http.routers.stealth-chat.tls=true"
+      - "traefik.http.routers.stealth-chat.tls.certresolver=letsencrypt"
+
+  # Redis for session storage (future enhancement)
+  redis:
+    image: redis:7-alpine
+    container_name: stealth-chat-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-stealth-redis-pass}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - stealth-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx reverse proxy (optional, for SSL termination)
+  nginx:
+    image: nginx:alpine
+    container_name: stealth-chat-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx-logs:/var/log/nginx
+    depends_on:
+      - stealth-chat
+    networks:
+      - stealth-network
+    profiles:
+      - production
+
+  # Monitoring with Prometheus (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: stealth-chat-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - stealth-network
+    profiles:
+      - monitoring
+
+  # Grafana for visualization (optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: stealth-chat-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+    networks:
+      - stealth-network
+    profiles:
+      - monitoring
+
+# Named volumes for data persistence
+volumes:
+  stealth-logs:
+    driver: local
+  redis-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  nginx-logs:
+    driver: local
+
+# Custom network
+networks:
+  stealth-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# ============================================================================
+# USAGE INSTRUCTIONS
+# ============================================================================
+
+# Basic usage (just the app):
+# docker-compose up -d stealth-chat
+
+# Full stack with monitoring:
+# docker-compose --profile monitoring up -d
+
+# Production with nginx:
+# docker-compose --profile production up -d
+
+# Development mode:
+# docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+# View logs:
+# docker-compose logs -f stealth-chat
+
+# Scale the app (if needed):
+# docker-compose up -d --scale stealth-chat=3
+
+# Update and restart:
+# docker-compose pull
+# docker-compose up -d --force-recreate
+
+# Clean up:
+# docker-compose down
+# docker-compose down -v  # Remove volumes too
+
+# ============================================================================
+# ENVIRONMENT SETUP
+# ============================================================================
+
+# Create .env file with required variables:
+# BOT_TOKEN=your_telegram_bot_token
+# REDIS_PASSWORD=secure_redis_password
+# GRAFANA_PASSWORD=secure_grafana_password
+# DOMAIN=your-domain.com
+
+# For SSL with Let's Encrypt (production):
+# 1. Install Traefik: https://doc.traefik.io/traefik/
+# 2. Configure DNS to point to your server
+# 3. Update labels in stealth-chat service
+# 4. Set up automatic SSL certificate renewal
+
+# ============================================================================
+# PRODUCTION CONSIDERATIONS
+# ============================================================================
+
+# 1. Security:
+#    - Use strong passwords
+#    - Enable firewall rules
+#    - Regular security updates
+#    - Monitor container logs
+#    - Use secrets management (Docker secrets, Kubernetes secrets)
+
+# 2. Performance:
+#    - Set resource limits
+#    - Configure proper health checks
+#    - Use CDN for static assets
+#    - Enable gzip compression
+#    - Set up load balancing if needed
+
+# 3. Monitoring:
+#    - Set up log aggregation
+#    - Configure alerting
+#    - Monitor container metrics
+#    - Track application performance
+
+# 4. Backup:
+#    - Regular database backups
+#    - Configuration backup
+#    - SSL certificate backup
+#    - Test restoration procedures
+
+# ============================================================================
+# DEVELOPMENT PROFILE
+# ============================================================================
+
+# Create docker-compose.dev.yml for development:
+version: '3.8'
+services:
+  stealth-chat-dev:
+    build:
+      context: .
+      target: development
+    container_name: stealth-chat-dev
+    ports:
+      - "3000:3000"
+      - "3001:3001"
+      - "9229:9229"  # Debug port
+    environment:
+      - NODE_ENV=development
+      - DEBUG_MODE=true
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: npm run dev
+    networks:
+      - stealth-network
