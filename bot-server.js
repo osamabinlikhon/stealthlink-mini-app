@@ -37,29 +37,36 @@ class StealthChatBot {
     }
 
     setupWebSocket() {
-        this.wss = new WebSocket.Server({ port: this.wsPort });
-        
-        this.wss.on('connection', (ws, req) => {
-            console.log('New WebSocket connection');
+        try {
+            this.wss = new WebSocket.Server({ port: this.wsPort });
             
-            ws.on('message', (data) => {
-                try {
-                    const message = JSON.parse(data.toString());
-                    this.handleWebSocketMessage(ws, message);
-                } catch (error) {
-                    console.error('WebSocket message error:', error);
-                }
+            this.wss.on('connection', (ws, req) => {
+                console.log('New WebSocket connection');
+                
+                ws.on('message', (data) => {
+                    try {
+                        const message = JSON.parse(data.toString());
+                        this.handleWebSocketMessage(ws, message);
+                    } catch (error) {
+                        console.error('WebSocket message error:', error);
+                    }
+                });
+
+                ws.on('close', () => {
+                    console.log('WebSocket connection closed');
+                    this.handleDisconnect(ws);
+                });
+
+                ws.on('error', (error) => {
+                    console.error('WebSocket error:', error);
+                });
             });
 
-            ws.on('close', () => {
-                console.log('WebSocket connection closed');
-                this.handleDisconnect(ws);
-            });
-
-            ws.on('error', (error) => {
-                console.error('WebSocket error:', error);
-            });
-        });
+            console.log(`✅ WebSocket server configured on port ${this.wsPort}`);
+        } catch (error) {
+            console.error('❌ WebSocket server setup failed:', error);
+            console.log('⚠️ Continuing without WebSocket support');
+        }
     }
 
     setupBot() {
@@ -553,10 +560,29 @@ class StealthChatBot {
     }
 
     start() {
-        this.app.listen(this.httpPort, () => {
-            console.log(`StealthChat API server running on port ${this.httpPort}`);
-            console.log(`WebSocket server running on port ${this.wsPort}`);
-            console.log(`Health check available at http://localhost:${this.httpPort}/health`);
+        // Validate required environment variables
+        if (!this.botToken) {
+            console.error('BOT_TOKEN environment variable is required');
+            process.exit(1);
+        }
+
+        // Use PORT environment variable for HTTP server (Render requirement)
+        const httpPort = parseInt(process.env.PORT || '3000', 10);
+        
+        // WebSocket port - ensure it's a valid number
+        const wsPort = parseInt(process.env.WS_PORT || (httpPort + 1).toString(), 10);
+        
+        // Start HTTP server
+        const server = this.app.listen(httpPort, () => {
+            console.log(`✅ StealthChat API server running on port ${httpPort}`);
+            console.log(`✅ WebSocket server running on port ${wsPort}`);
+            console.log(`✅ Health check: http://localhost:${httpPort}/health`);
+            console.log(`✅ Bot token configured: ${this.botToken.substring(0, 10)}...`);
+        });
+
+        server.on('error', (error) => {
+            console.error('❌ Server startup error:', error);
+            process.exit(1);
         });
     }
 }
