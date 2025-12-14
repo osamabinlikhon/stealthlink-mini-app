@@ -643,7 +643,7 @@ class StealthChatApp {
     }
 
     async apiCall(endpoint, options = {}) {
-        const baseUrl = 'https://your-bot-api.com'; // Replace with your bot API URL
+        const baseUrl = 'https://stealthlink-mini-app.onrender.com'; // Render backend URL
         
         try {
             const response = await fetch(baseUrl + endpoint, {

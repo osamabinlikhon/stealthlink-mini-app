@@ -7,7 +7,9 @@ const { Bot } = require('grammy');
 class StealthChatBot {
     constructor() {
         this.app = express();
-        this.port = process.env.PORT || 3000;
+        // Ensure port is a valid number, fallback to 3000 for HTTP and 3001 for WebSocket
+        this.httpPort = parseInt(process.env.PORT || '3000', 10);
+        this.wsPort = parseInt(process.env.WS_PORT || (this.httpPort + 1).toString(), 10);
         this.botToken = process.env.BOT_TOKEN;
         this.rooms = new Map();
         this.connections = new Map();
@@ -35,7 +37,7 @@ class StealthChatBot {
     }
 
     setupWebSocket() {
-        this.wss = new WebSocket.Server({ port: this.port + 1 });
+        this.wss = new WebSocket.Server({ port: this.wsPort });
         
         this.wss.on('connection', (ws, req) => {
             console.log('New WebSocket connection');
@@ -551,9 +553,10 @@ class StealthChatBot {
     }
 
     start() {
-        this.app.listen(this.port, () => {
-            console.log(`StealthChat API server running on port ${this.port}`);
-            console.log(`WebSocket server running on port ${this.port + 1}`);
+        this.app.listen(this.httpPort, () => {
+            console.log(`StealthChat API server running on port ${this.httpPort}`);
+            console.log(`WebSocket server running on port ${this.wsPort}`);
+            console.log(`Health check available at http://localhost:${this.httpPort}/health`);
         });
     }
 }
