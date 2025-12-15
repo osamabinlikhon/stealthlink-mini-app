@@ -7,9 +7,9 @@ const { Bot } = require('grammy');
 class StealthChatBot {
     constructor() {
         this.app = express();
-        // Ensure port is a valid number, fallback to 3000 for HTTP and 3001 for WebSocket
+        // Use same port for both HTTP and WebSocket on Render
         this.httpPort = parseInt(process.env.PORT || '3000', 10);
-        this.wsPort = parseInt(process.env.WS_PORT || (this.httpPort + 1).toString(), 10);
+        this.wsPort = this.httpPort; // Same port for WebSocket on Render
         this.botToken = process.env.BOT_TOKEN;
         this.rooms = new Map();
         this.connections = new Map();
@@ -38,7 +38,15 @@ class StealthChatBot {
 
     setupWebSocket() {
         try {
-            this.wss = new WebSocket.Server({ port: this.wsPort });
+            // Create HTTP server first
+            this.server = this.app.listen(this.httpPort, () => {
+                console.log(`Server running on port ${this.httpPort}`);
+            });
+            
+            // Attach WebSocket to the same HTTP server
+            this.wss = new WebSocket.Server({ server: this.server });
+            
+            console.log(`WebSocket server attached to HTTP server on port ${this.httpPort}`);
             
             this.wss.on('connection', (ws, req) => {
                 console.log('New WebSocket connection');
@@ -572,18 +580,19 @@ class StealthChatBot {
         // WebSocket port - ensure it's a valid number
         const wsPort = parseInt(process.env.WS_PORT || (httpPort + 1).toString(), 10);
         
-        // Start HTTP server
-        const server = this.app.listen(httpPort, () => {
-            console.log(`✅ StealthChat API server running on port ${httpPort}`);
-            console.log(`✅ WebSocket server running on port ${wsPort}`);
-            console.log(`✅ Health check: http://localhost:${httpPort}/health`);
-            console.log(`✅ Bot token configured: ${this.botToken.substring(0, 10)}...`);
-        });
+        // Server is now started in setupWebSocket method with WebSocket attached
+        console.log(`✅ StealthChat API server running on port ${this.httpPort}`);
+        console.log(`✅ WebSocket server attached to HTTP server`);
+        console.log(`✅ Health check: http://localhost:${this.httpPort}/health`);
+        console.log(`✅ Bot token configured: ${this.botToken ? this.botToken.substring(0, 10) + '...' : 'NOT SET'}`);
 
-        server.on('error', (error) => {
-            console.error('❌ Server startup error:', error);
-            process.exit(1);
-        });
+        // Handle server errors
+        if (this.server) {
+            this.server.on('error', (error) => {
+                console.error('❌ Server startup error:', error);
+                process.exit(1);
+            });
+        }
     }
 }
 
